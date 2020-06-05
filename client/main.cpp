@@ -9,6 +9,8 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 
+#include <thread>
+
 
 void* get_in_addr(struct sockaddr* sa)
 {
@@ -17,6 +19,41 @@ void* get_in_addr(struct sockaddr* sa)
     return &((struct sockaddr_in6*)sa)->sin6_addr;
 }
 
+
+void myReceive (int socketFD)
+{
+    char buffrecv[128];
+
+    while(true)
+    {
+        int bytes_rcvd = recv(socketFD, buffrecv, 128-1, 0);
+        if (bytes_rcvd <= 0)
+        {
+            perror("recv");
+            break;
+        }
+        buffrecv[bytes_rcvd] = '\0';
+        printf("[Message from server]: %s", buffrecv);
+    }
+}
+
+
+void mySend (int socketFD)
+{
+    char buffsend[128];
+
+    while(true)
+    {
+        fgets(buffsend, 128-1, stdin);
+
+        int bytes_sent = send(socketFD, buffsend, strlen(buffsend), 0);
+        if (bytes_sent <= 0)
+        {
+            perror("send");
+            break;
+        }
+    }
+}
 
 
 int main(int argc, char *argv[])
@@ -69,47 +106,23 @@ int main(int argc, char *argv[])
     char server_name[INET6_ADDRSTRLEN];
     inet_ntop(p->ai_family, get_in_addr((struct sockaddr*)p->ai_addr), server_name, sizeof server_name);
 
-    printf("client: connecting to server %s\n", server_name);
+    printf("client: connected to server %s\n", server_name);
 
     p = NULL; //I added that
     freeaddrinfo(servinfo);
     servinfo = NULL; //I added that
 
 
-
 //-------------------------------------------------
+//
 
-    char buffsend[128];
-    char buffrecv[128];
 
-    while(true)
-    {
-    //RECEIVING
-        printf("\n...waiting for message from server...\n");
-        int bytes_rcvd = recv(socketFD, buffrecv, 128-1, 0);
-        if (bytes_rcvd <= 0)
-        {
-            perror("recv");
-            close(newFD);
-            close(socketFD);
-            exit(1);
-        }
-        buffrecv[bytes_rcvd] = '\0';
-        printf("[Message from server]: %s\n", buffrecv);
+    std::thread read(myReceive, socketFD);
+    std::thread write(mySend, socketFD);
 
-    //SENDING
-        printf("Enter your message for server: ");
-        fgets(buffsend, 128-1, stdin);
 
-        int bytes_sent = send(socketFD, buffsend, strlen(buffsend), 0);
-        if (bytes_sent <= 0)
-        {
-            perror("send");
-            close(newFD);
-            close(socketFD);
-            exit(1);
-        }
-    }
+    read.join();
+    write.join();
 
 
     close(socketFD); //to fully free FD

@@ -11,6 +11,11 @@
 #include <sys/wait.h>
 #include <signal.h>
 
+#include <thread>
+#include <atomic>
+
+//std::atomic<bool> isClientOK(false);
+
 
 void sigchld_handler(int s)
 {
@@ -29,6 +34,43 @@ void* get_in_addr(struct sockaddr* sa)
     return &((struct sockaddr_in6*)sa)->sin6_addr;
 }
 
+
+void myReceive (int newFD)
+{
+    char buffrecv[128];
+
+    while(true)
+    {
+        int bytes_rcvd = recv(newFD, buffrecv, 128-1, 0);
+        if (bytes_rcvd <= 0)
+        {
+            perror("recv");
+//            isClientOK = false;
+            break;
+        }
+        buffrecv[bytes_rcvd] = '\0';
+        printf("[Message from client]: %s", buffrecv);
+    }
+}
+
+
+void mySend (int newFD)
+{
+    char buffsend[128];
+
+    while(true)
+    {
+        fgets(buffsend, 128-1, stdin);
+
+        int bytes_sent = send(newFD, buffsend, strlen(buffsend), 0);
+        if (bytes_sent <= 0)
+        {
+            perror("send");
+//            isClientOK = false;
+            break;
+        }
+    }
+}
 
 
 int main(int argc, char *argv[])
@@ -140,38 +182,28 @@ int main(int argc, char *argv[])
 
 
     //--------------------------------
-        char buffsend[128];
-        char buffrecv[128];
 
-        while(true)
-        {
-        //SENDING
-            printf("Enter your message for client: ");
-            fgets(buffsend, 128-1, stdin);
+//        isClientOK = true;
 
-            int bytes_sent = send(newFD, buffsend, strlen(buffsend), 0);
-            if (bytes_sent <= 0)
-            {
-                perror("send");
-                close(newFD);
-                close(socketFD);
-                exit(1);
-            }
+        std::thread read(myReceive, newFD);
+        std::thread write(mySend, newFD);
 
-        //RECEIVING
-            printf("\n...waiting for message from client...\n");
-            int bytes_rcvd = recv(newFD, buffrecv, 128-1, 0);
-            if (bytes_rcvd <= 0)
-            {
-                perror("recv");
-                close(newFD);
-                close(socketFD);
-                exit(1);
-            }
+//        while(true)
+//        {
+//            sleep(1);
+//            if (!isClientOK)
+//            {
+//                read.std::thread::~thread();
+//                write.std::thread::~thread();
+//            }
+//        }
+//
+        if (read.joinable())
+            read.join();
+        if (write.joinable())
+            write.join();
 
-            buffrecv[bytes_rcvd] = '\0';
-            printf("[Message from client]: %s\n", buffrecv);
-        }
+
         close(newFD);
     //-----------------------------------------------------
     }
