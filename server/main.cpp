@@ -73,6 +73,18 @@ void mySend (int newFD)
 }
 
 
+void process(int newFD)
+{
+    std::thread read(myReceive, newFD);
+    std::thread write(mySend, newFD);
+
+    if (read.joinable())
+        read.join();
+    if (write.joinable())
+        write.join();
+}
+
+
 int main(int argc, char *argv[])
 {
     struct addrinfo hints;
@@ -164,44 +176,14 @@ int main(int argc, char *argv[])
 
         printf("server: got connection from client %s\n", client_name);
 
-    //-------------------------------------------------
-//
-//        if (!fork()) //this is child process
-//        {
-//            close(socketFD); //child doesn't need the listener
-//
-//            if (send(newFD, "Hello World!", 13, 0) == -1)
-//                perror("send");
-//
-//            close(newFD);
-//            exit(0);
-//        }
-//
-//        close(newFD); //parent doesn't need this
-//    }
 
-
-    //--------------------------------
-
-//        isClientOK = true;
-
-        std::thread read(myReceive, newFD);
-        std::thread write(mySend, newFD);
-
-//        while(true)
-//        {
-//            sleep(1);
-//            if (!isClientOK)
-//            {
-//                read.std::thread::~thread();
-//                write.std::thread::~thread();
-//            }
-//        }
-//
-        if (read.joinable())
-            read.join();
-        if (write.joinable())
-            write.join();
+    //-----------------------------------------------------
+        if (!fork())
+        {
+            close(socketFD);
+            process(newFD);
+            exit(0);
+        }
 
 
         close(newFD);
