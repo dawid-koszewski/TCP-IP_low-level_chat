@@ -1,33 +1,82 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h> //to get close() function to work
+#include <errno.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
 #include <netdb.h>
 #include <arpa/inet.h>
-#include <netinet/in.h>
-#include <unistd.h> //to get close() function to work
 
 
-
-int main()
+void* get_in_addr(struct sockaddr* sa)
 {
-    struct addrinfo hints_c, *res_c;
-    int status_c;
+    if (sa->sa_family == AF_INET)
+        return &((struct sockaddr_in*)sa)->sin_addr;
+    return &((struct sockaddr_in6*)sa)->sin6_addr;
+}
 
-    memset(&hints_c, 0, sizeof hints_c);
-    hints_c.ai_family = AF_UNSPEC;
-    hints_c.ai_socktype = SOCK_STREAM;
 
-    if ( (status_c = getaddrinfo("dawid-VirtualBox", "3490", &hints_c, &res_c)) != 0 )
+
+int main(int argc, char *argv[])
+{
+//    if (argc != 2) //and first parameter in getaddrinfo(argv[1], ...)
+//    {
+//        fprintf(stderr, "usage: client hostname\n");
+//        exit(1);
+//    }
+
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    struct addrinfo *servinfo = NULL;
+    int status = -1;
+    if ( (status = getaddrinfo("dawid-VirtualBox", "3490", &hints, &servinfo)) != 0 )
     {
-        printf("getaddrinfo error: %s\n", gai_strerror(status_c));
-        return 2;
+        printf("getaddrinfo error: %s\n", gai_strerror(status));
+        return 1;
     }
 
-    int socketFD_c = socket(res_c->ai_family, res_c->ai_socktype, res_c->ai_protocol);
-    bind(socketFD_c, res_c->ai_addr, res_c->ai_addrlen);
+    struct addrinfo *p = NULL;
+    int socketFD = -1;
+    for (p=servinfo; p != NULL; p=p->ai_next)
+    {
+        if ((socketFD = socket(servinfo->ai_family, servinfo->ai_socktype, servinfo->ai_protocol)) == -1)
+        {
+            perror("client: socket");
+            continue;
+        }
 
-    connect(socketFD_c, res_c->ai_addr, res_c->ai_addrlen);
+        if (connect(socketFD, p->ai_addr, p->ai_addrlen) == -1)
+        {
+            close(socketFD);
+            perror("client: connect");
+            continue;
+        }
+
+        break;
+    }
+
+    if (p == NULL)
+    {
+        fprintf(stderr, "client: failed to connect\n");
+        exit(1);
+    }
+
+    char server_name[INET6_ADDRSTRLEN];
+    inet_ntop(p->ai_family, get_in_addr((struct sockaddr*)p->ai_addr), server_name, sizeof server_name);
+
+    printf("client: connecting to server %s\n", server_name);
+
+    p = NULL; //I added that
+    freeaddrinfo(servinfo);
+    servinfo = NULL; //I added that
+
+
+
 //-------------------------------------------------
 
     char buffsend[128];
@@ -37,11 +86,13 @@ int main()
     {
     //RECEIVING
         printf("\n...waiting for message from server...\n");
-        int bytes_rcvd = recv(socketFD_c, buffrecv, 128-1, 0);
+        int bytes_rcvd = recv(socketFD, buffrecv, 128-1, 0);
         if (bytes_rcvd <= 0)
         {
-            printf("Either connection closed or error\n");
-            break;
+            perror("recv");
+            close(newFD);
+            close(socketFD);
+            exit(1);
         }
         buffrecv[bytes_rcvd] = '\0';
         printf("[Message from server]: %s\n", buffrecv);
@@ -50,18 +101,18 @@ int main()
         printf("Enter your message for server: ");
         fgets(buffsend, 128-1, stdin);
 
-        int bytes_sent = send(socketFD_c, buffsend, strlen(buffsend), 0);
-        if (bytes_sent == 0)
+        int bytes_sent = send(socketFD, buffsend, strlen(buffsend), 0);
+        if (bytes_sent <= 0)
         {
-            printf("Failure sending message\n");
-            close(socketFD_c);
-            break;
+            perror("send");
+            close(newFD);
+            close(socketFD);
+            exit(1);
         }
     }
 
 
-    close(socketFD_c); //to fully free FD
-    freeaddrinfo(res_c);
+    close(socketFD); //to fully free FD
 
     return 0;
 }
